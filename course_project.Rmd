@@ -1,0 +1,105 @@
+---
+title: "Practical Machine Learning - Course project"
+
+---
+
+###Synopsis
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+###Summary
+A random forest model was build with an accuracy of 0.994. When run against the testing set, the model predicted all 20 cases correctly.
+
+###Data Processing
+####Load data
+```{r setup, cache=TRUE, echo=TRUE, results='hide'}
+if(!file.exists("./data")){dir.create("./data")}
+# download and import training data
+fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+download.file(fileUrl,destfile="./data/training.csv",method="curl")
+
+# import the first five rows to get an idea of the data
+tab5rows<-read.table("./data/training.csv", quote='"', sep=',', header=TRUE, nrows = 5)
+dim(tab5rows)
+str(tab5rows)
+
+# get the full data set
+basicTrainingData<-read.csv("./data/training.csv",sep=",",header=TRUE)
+
+
+# download and import testing data
+fileUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(fileUrl,destfile="./data/testing.csv",method="curl")
+basicTestingData<-read.csv("./data/testing.csv",sep=",",header=TRUE)
+
+# explore variables
+dim(basicTrainingData)
+str(basicTrainingData)
+```
+
+####Clean data
+```{r cleaning, echo=TRUE, results='hide'}
+# remove the first seven rows which contain no predictive values
+cutTrainingData<-basicTrainingData[,-(1:7)]
+
+# delete columns with all missing values
+noNAsTrainingData<-cutTrainingData[,colSums(is.na(cutTrainingData)) == 0]
+
+# exclude near zero value predictors
+library(caret)
+nsv_positions<-nearZeroVar(noNAsTrainingData,saveMetrics=FALSE)
+# filter out the variables that were near-zero-value.
+nsvTrainingData<-noNAsTrainingData[-c(nsv_positions)]
+
+# find correlated variables to exclude one of the highly correlated pairs
+filtered_training_no_class<-nsvTrainingData[-c(dim(nsvTrainingData))]
+correlated_cols_to_exclude<-findCorrelation(cor(filtered_training_no_class), cutoff= 0.8)
+finalTrainingData<-nsvTrainingData[-c(correlated_cols_to_exclude)]
+
+#explore the clean dataset
+dim(finalTrainingData)
+str(finalTrainingData)
+
+# transform the test set accordingly
+colNames<-names(finalTrainingData)
+finalTestingData<-basicTestingData[,names(basicTestingData) %in% c(colNames)]
+
+```
+
+####Build random forests
+```{r model, echo=TRUE, results='hide'}
+#split the training set
+part<-createDataPartition(finalTrainingData$classe, p=0.7, list=F)
+training<-finalTrainingData[part,]
+probe<-finalTrainingData[-part,]
+str(training)
+
+set.seed(1023)
+#train a random forest model
+library(randomForest)
+rf.model<-randomForest(classe~.,data=training,importance=TRUE)
+```
+
+####Validate the model
+```{r validate, echo=TRUE, results='markup'}
+yhat.rf<-predict(rf.model,newdata=probe)
+confusionMatrix(yhat.rf,probe$classe)
+```
+
+####Test the model on the testing data set
+```{r testing, echo=TRUE, results='markup'}
+ytest.rf<-predict(rf.model,newdata=finalTestingData)
+```
+
+####Generate files for submission
+```{r submit,echo=TRUE,results='hide'}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+pml_write_files(ytest.rf)
+```
+
+
